@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Indoor localization</string>
+    <string name="marker">marker</string>
 </resources>

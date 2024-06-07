@@ -32,8 +32,12 @@ android {
     }
 }
 
+
 dependencies {
 
+    implementation ("com.github.yalantis:ucrop:2.2.8")
+    implementation("androidx.constraintlayout:constraintlayout:2.0.4")
+    implementation("com.opencsv:opencsv:5.5.2")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
