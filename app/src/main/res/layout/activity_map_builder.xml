@@ -4,15 +4,27 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <EditText
+        android:id="@+id/etTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Map Title"
+        android:textSize="18sp"
+        android:layout_marginTop="16dp"
+        android:background="@android:color/transparent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <Button
         android:id="@+id/btnBack"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Back"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/etTitle"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="16dp" />
+        android:layout_marginTop="8dp" />
 
     <Button
         android:id="@+id/btnSelectImage"
@@ -28,18 +40,21 @@
         android:id="@+id/frameLayout"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:layout_marginTop="16dp"
+        android:background="@android:color/darker_gray"
         app:layout_constraintTop_toBottomOf="@id/btnSelectImage"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintWidth_percent="0.9"
-        app:layout_constraintDimensionRatio="3:4"
-        android:layout_marginTop="32dp">
+        app:layout_constraintDimensionRatio="3:4">
 
         <ImageView
             android:id="@+id/imageView"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:scaleType="fitCenter" />
+            android:scaleType="fitCenter"
+            android:background="@android:color/white"
+            android:layout_margin="4dp"/>
 
     </FrameLayout>
 

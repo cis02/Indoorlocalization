@@ -11,6 +11,7 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.activity.result.ActivityResultLauncher
@@ -24,12 +25,15 @@ class MapBuilderActivity : AppCompatActivity() {
     private lateinit var selectImageLauncher: ActivityResultLauncher<Intent>
     private lateinit var imageView: ImageView
     private lateinit var frameLayout: FrameLayout
+    private lateinit var etTitle: EditText
     private val markers = mutableListOf<PointF>()
 
     companion object {
         private const val REQUEST_CROP_IMAGE = 1001
         private const val MARKERS_FILE_NAME = "markers.csv"
         private const val IMAGE_FILE_NAME = "croppedImage.jpg"
+        private const val TITLE_FILE_NAME = "title.txt"
+        private const val MAP_DIRECTORY = "currentMap"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,8 +42,10 @@ class MapBuilderActivity : AppCompatActivity() {
 
         imageView = findViewById(R.id.imageView)
         frameLayout = findViewById(R.id.frameLayout)
+        etTitle = findViewById(R.id.etTitle)
 
         findViewById<Button>(R.id.btnBack).setOnClickListener {
+            saveTitle()
             finish() // Go back to the main activity
         }
 
@@ -56,8 +62,15 @@ class MapBuilderActivity : AppCompatActivity() {
         }
 
         setupActivityResultLaunchers()
-        loadImage() // Load the image first
+        loadTitle() // Load the title first
+        loadImage() // Load the image next
         loadMarkersFromCSV() // Load the markers after the image is loaded
+    }
+
+    private fun getMapDirectory(): File {
+        return File(filesDir, MAP_DIRECTORY).apply {
+            if (!exists()) mkdirs()
+        }
     }
 
     private fun setupActivityResultLaunchers() {
@@ -79,7 +92,7 @@ class MapBuilderActivity : AppCompatActivity() {
     }
 
     private fun cropImage(sourceUri: Uri) {
-        val destinationUri = Uri.fromFile(File(filesDir, IMAGE_FILE_NAME))
+        val destinationUri = Uri.fromFile(File(getMapDirectory(), IMAGE_FILE_NAME))
         val options = UCrop.Options()
 
         UCrop.of(sourceUri, destinationUri)
@@ -116,7 +129,7 @@ class MapBuilderActivity : AppCompatActivity() {
     }
 
     private fun saveMarkersToCSV() {
-        val file = File(filesDir, MARKERS_FILE_NAME)
+        val file = File(getMapDirectory(), MARKERS_FILE_NAME)
         try {
             FileWriter(file).use { writer ->
                 markers.forEach { point ->
@@ -131,7 +144,7 @@ class MapBuilderActivity : AppCompatActivity() {
     }
 
     private fun loadMarkersFromCSV() {
-        val file = File(filesDir, MARKERS_FILE_NAME)
+        val file = File(getMapDirectory(), MARKERS_FILE_NAME)
         if (file.exists()) {
             try {
                 BufferedReader(FileReader(file)).use { reader ->
@@ -168,7 +181,7 @@ class MapBuilderActivity : AppCompatActivity() {
             inputStream?.close()
 
             if (bitmap != null) {
-                val file = File(filesDir, IMAGE_FILE_NAME)
+                val file = File(getMapDirectory(), IMAGE_FILE_NAME)
                 val outputStream = FileOutputStream(file)
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
                 outputStream.close()
@@ -183,7 +196,7 @@ class MapBuilderActivity : AppCompatActivity() {
     }
 
     private fun loadImage() {
-        val file = File(filesDir, IMAGE_FILE_NAME)
+        val file = File(getMapDirectory(), IMAGE_FILE_NAME)
         if (file.exists()) {
             try {
                 val bitmap = BitmapFactory.decodeFile(file.absolutePath)
@@ -199,6 +212,38 @@ class MapBuilderActivity : AppCompatActivity() {
             }
         } else {
             Log.e("MapBuilderActivity", "Image file does not exist: ${file.absolutePath}")
+        }
+    }
+
+    private fun saveTitle() {
+        val title = etTitle.text.toString()
+        val file = File(getMapDirectory(), TITLE_FILE_NAME)
+        try {
+            FileWriter(file).use { writer ->
+                writer.write(title)
+            }
+            Log.d("MapBuilderActivity", "Title saved successfully: ${file.absolutePath}")
+        } catch (e: IOException) {
+            e.printStackTrace()
+            Log.e("MapBuilderActivity", "Error saving title: ${e.message}")
+        }
+    }
+
+    private fun loadTitle() {
+        val file = File(getMapDirectory(), TITLE_FILE_NAME)
+        if (file.exists()) {
+            try {
+                BufferedReader(FileReader(file)).use { reader ->
+                    val title = reader.readLine()
+                    etTitle.setText(title)
+                }
+                Log.d("MapBuilderActivity", "Title loaded successfully: ${file.absolutePath}")
+            } catch (e: IOException) {
+                e.printStackTrace()
+                Log.e("MapBuilderActivity", "Error loading title: ${e.message}")
+            }
+        } else {
+            Log.e("MapBuilderActivity", "Title file does not exist: ${file.absolutePath}")
         }
     }
 }
