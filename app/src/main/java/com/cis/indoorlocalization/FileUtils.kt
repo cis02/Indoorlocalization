@@ -1,19 +1,25 @@
 package com.cis.indoorlocalization
 
 import android.content.Context
+import android.net.Uri
+import android.os.Environment
+import android.util.Log
 import java.io.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
-import android.os.Environment
-
 
 object FileUtils {
 
-    // Existing functions...
-
-    fun archiveMap(context: Context, mapTitle: String) {
+    fun archiveMap(context: Context) {
         val currentMapPath = File(context.filesDir, "currentMap")
+        val titleFile = File(currentMapPath, "title.txt")
+        if (!titleFile.exists()) {
+            Log.e("FileUtils", "title.txt not found")
+            return
+        }
+
+        val mapTitle = titleFile.readText().trim()
         val otherMapsPath = File(context.filesDir, "otherMaps")
         if (!otherMapsPath.exists()) {
             otherMapsPath.mkdirs()
@@ -32,35 +38,14 @@ object FileUtils {
         }
     }
 
-    fun exportMapToExternalStorage(context: Context, mapTitle: String): Boolean {
-        val otherMapsPath = File(context.filesDir, "otherMaps")
-        val zipFile = File(otherMapsPath, "$mapTitle.zip")
-        if (!zipFile.exists()) {
-            return false
-        }
-
-        val externalPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val externalFile = File(externalPath, zipFile.name)
-        FileInputStream(zipFile).use { input ->
-            FileOutputStream(externalFile).use { output ->
-                input.copyTo(output)
-            }
-        }
-        return true
-    }
-
-    fun importMapFromExternalStorage(context: Context, zipFilePath: String): Boolean {
-        val zipFile = File(zipFilePath)
-        if (!zipFile.exists() || !zipFile.extension.equals("zip", ignoreCase = true)) {
-            return false
-        }
-
+    fun importMapFromExternalStorage(context: Context, uri: Uri): Boolean {
         val tempDir = File(context.filesDir, "temp")
         if (!tempDir.exists()) {
             tempDir.mkdirs()
         }
 
-        ZipInputStream(FileInputStream(zipFile)).use { zis ->
+        val inputStream = context.contentResolver.openInputStream(uri) ?: return false
+        ZipInputStream(inputStream).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 val newFile = File(tempDir, entry.name)
