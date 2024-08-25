@@ -22,7 +22,7 @@ class RouteSelectorActivity : AppCompatActivity() {
     private val markers = mutableListOf<PointF>()
     private var currentLocationMarker: PointF? = null
     private var destinationMarkerView: View? = null
-    private var pathOverlay: View? = null
+    private var pathOverlay: PathOverlayView? = null
 
     companion object {
         private const val MARKERS_FILE_NAME = "markers.csv"
@@ -188,51 +188,103 @@ class RouteSelectorActivity : AppCompatActivity() {
     }
 
     private fun showNavigation(start: PointF, end: PointF) {
-        // Simple example to demonstrate Dijkstra's algorithm usage
-        // This example assumes a grid layout for simplicity
-
-        // Here you would transform your markers and positions into vertices for the graph
         val graph = Graph()
+
+        // Create a map to assign a unique integer identifier to each marker
+        val markerIndexMap = markers.mapIndexed { index, marker -> marker to index }.toMap()
+
         // Add vertices and edges based on your markers and possible paths
-        // Example (simplified, actual implementation should consider all markers and possible paths):
-        markers.forEach { marker ->
-            val adjacentVertices = markers.mapNotNull { neighbor ->
-                if (neighbor != marker) Vertex(neighbor.toString()[0], calculateDistance(marker, neighbor).toInt()) else null
+        markers.forEachIndexed { index, marker ->
+            val adjacentVertices = markers.mapIndexedNotNull { neighborIndex, neighbor ->
+                if (neighborIndex != index) {
+                    Vertex(neighborIndex.toString()[0], calculateDistance(marker, neighbor).toInt())
+                } else {
+                    null
+                }
             }
-            graph.addVertex(marker.toString()[0], adjacentVertices)
+            graph.addVertex(index.toString()[0], adjacentVertices)
         }
 
-        val startVertex = start.toString()[0]
-        val endVertex = end.toString()[0]
+        // Find the closest markers to the start and end points
+        val startVertexIndex = markerIndexMap.entries.minByOrNull { calculateDistance(it.key, start) }?.value
+        val endVertexIndex = markerIndexMap.entries.minByOrNull { calculateDistance(it.key, end) }?.value
+
+        if (startVertexIndex == null || endVertexIndex == null) {
+            Log.e("RouteSelectorActivity", "Could not find appropriate vertices for start or end points")
+            return
+        }
+
+        val startVertex = startVertexIndex.toString()[0]
+        val endVertex = endVertexIndex.toString()[0]
+
+        // Log the start and end vertices
+        Log.d("RouteSelectorActivity", "Start Vertex: $startVertex, End Vertex: $endVertex")
+
         val path = graph.getShortestPath(startVertex, endVertex)
 
+        // Log the path for debugging
         Log.d("RouteSelectorActivity", "Calculated path: $path")
+
+        // Translate the path characters back to the corresponding marker positions
+        val pathPoints = path.map { markerId ->
+            markers[markerId.toString().toInt()]
+        }
+
         // Visualize the path on your map
-        visualizePath(path)
+        visualizePath(pathPoints)
     }
+
+
+
+
+
 
     private fun calculateDistance(point1: PointF, point2: PointF): Float {
         return sqrt((point2.x - point1.x).pow(2) + (point2.y - point1.y).pow(2))
     }
 
-    private fun visualizePath(path: List<Char>) {
+    private fun visualizePath(pathPoints: List<PointF>) {
         pathOverlay?.let { frameLayout.removeView(it) }
-        pathOverlay = object : View(this) {
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                val paint = Paint().apply {
-                    color = Color.RED
-                    strokeWidth = 5f
-                    style = Paint.Style.STROKE
-                }
-                val pathPoints = path.map { id ->
-                    markers.find { it.toString()[0] == id }?.let { PointF(it.x * imageView.width, it.y * imageView.height) }
-                }.filterNotNull()
-                for (i in 0 until pathPoints.size - 1) {
-                    canvas.drawLine(pathPoints[i].x, pathPoints[i].y, pathPoints[i + 1].x, pathPoints[i + 1].y, paint)
-                }
-            }
+        pathOverlay = PathOverlayView(this).apply {
+            setPathPoints(pathPoints)
         }
         frameLayout.addView(pathOverlay)
     }
+
+    inner class PathOverlayView(context: android.content.Context) : View(context) {
+
+        private val pathPaint = Paint().apply {
+            color = Color.RED
+            strokeWidth = 5f
+            style = Paint.Style.STROKE
+        }
+        private var pathPoints: List<PointF> = emptyList()
+
+        fun setPathPoints(points: List<PointF>) {
+            this.pathPoints = points
+            invalidate() // Request to redraw the view with the new path
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            if (pathPoints.size < 2) return
+            for (i in 0 until pathPoints.size - 1) {
+                val start = pathPoints[i]
+                val end = pathPoints[i + 1]
+                // Log the points being drawn for debugging
+                Log.d("PathOverlayView", "Drawing line from ($start.x, $start.y) to ($end.x, $end.y)")
+                canvas.drawLine(
+                    start.x * imageView.width,
+                    start.y * imageView.height,
+                    end.x * imageView.width,
+                    end.y * imageView.height,
+                    pathPaint
+                )
+            }
+        }
+    }
+
+
+
+
 }

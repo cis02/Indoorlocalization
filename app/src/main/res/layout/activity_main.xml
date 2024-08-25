@@ -40,10 +40,21 @@
             android:textSize="24sp" />
 
         <TextView
-            android:id="@+id/wifiInfoTextView"
+            android:id="@+id/wifiSSIDTextView"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_below="@id/closestWifiTextView"
+            android:layout_centerHorizontal="true"
+            android:layout_marginTop="8dp"
+            android:text="SSID: "
+            android:textColor="@android:color/black"
+            android:textSize="20sp"/>
+
+        <TextView
+            android:id="@+id/wifiInfoTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_below="@id/wifiSSIDTextView"
             android:layout_centerHorizontal="true"
             android:layout_marginTop="8dp"
             android:text="Signal Strength: - dBm\nMAC Address: XX:XX:XX:XX:XX:XX"

@@ -34,6 +34,8 @@
         <activity android:name=".RouteSelectorActivity" />
         <activity android:name=".MapSelectorActivity" />
         <activity android:name=".MapBuilderActivity" />
+        <activity android:name=".MarkerEditActivity" />
+
     </application>
 
 

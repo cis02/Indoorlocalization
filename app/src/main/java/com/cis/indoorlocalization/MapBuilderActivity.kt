@@ -14,6 +14,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.TextView
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -23,10 +24,11 @@ import java.io.*
 class MapBuilderActivity : AppCompatActivity() {
 
     private lateinit var selectImageLauncher: ActivityResultLauncher<Intent>
+    private lateinit var markerEditLauncher: ActivityResultLauncher<Intent>
     private lateinit var imageView: ImageView
     private lateinit var frameLayout: FrameLayout
     private lateinit var etTitle: EditText
-    private val markers = mutableListOf<PointF>()
+    private val markers = mutableListOf<MarkerData>()
 
     companion object {
         private const val REQUEST_CROP_IMAGE = 1001
@@ -55,11 +57,13 @@ class MapBuilderActivity : AppCompatActivity() {
 
         imageView.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
+                Log.d("MapBuilderActivity", "Touch detected at: (${event.x}, ${event.y})")
                 addMarker(event.x, event.y)
                 saveMarkersToCSV()
             }
             true
         }
+
 
         setupActivityResultLaunchers()
         loadTitle() // Load the title first
@@ -82,6 +86,21 @@ class MapBuilderActivity : AppCompatActivity() {
                 }
             }
         }
+
+        markerEditLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val markerIndex = result.data?.getIntExtra("markerIndex", -1) ?: -1
+                val markerData = result.data?.getParcelableExtra<MarkerData>("markerData")
+
+                if (markerIndex != -1 && markerData != null) {
+                    markers[markerIndex] = markerData
+                    Log.d("MapBuilderActivity", "Marker updated: ${markerData.name} at position ${markerData.position}")
+                    saveMarkersToCSV()
+                    updateMarkersOnMap() // Refresh the UI to reflect the changes
+                }
+            }
+        }
+
     }
 
     private fun selectImage() {
@@ -113,27 +132,74 @@ class MapBuilderActivity : AppCompatActivity() {
     }
 
     private fun addMarker(x: Float, y: Float) {
-        val markerView = View.inflate(this, R.layout.marker_view, null)
-        val layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT
-        )
-        layoutParams.leftMargin = x.toInt() - 10 // Adjust for marker size
-        layoutParams.topMargin = y.toInt() - 10 // Adjust for marker size
-        frameLayout.addView(markerView, layoutParams)
-
-        // Save the marker position
-        val markerX = x / imageView.width
-        val markerY = y / imageView.height
-        markers.add(PointF(markerX, markerY))
+        val position = PointF(x / imageView.width, y / imageView.height)
+        Log.d("MapBuilderActivity", "Adding marker at: $position")
+        val markerData = MarkerData(position)
+        markers.add(markerData)
+        saveMarkersToCSV()
+        updateMarkersOnMap()
     }
+
+
+    private fun updateMarkersOnMap() {
+        frameLayout.removeAllViews() // Clear all previous markers and names
+
+        markers.forEachIndexed { index, markerData ->
+            // Inflate marker view
+            val markerView = View.inflate(this, R.layout.marker_view, null)
+            val layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+
+            // Calculate the actual position of the marker
+            val actualX = markerData.position.x * imageView.width
+            val actualY = markerData.position.y * imageView.height
+
+            layoutParams.leftMargin = actualX.toInt() - 10 // Adjust for marker size
+            layoutParams.topMargin = actualY.toInt() - 10 // Adjust for marker size
+            Log.d("MapBuilderActivity", "Displaying marker at: (${layoutParams.leftMargin}, ${layoutParams.topMargin})")
+
+            // Set up the click listener to edit the marker
+            markerView.setOnClickListener {
+                Log.d("MapBuilderActivity", "Marker clicked: ${markerData.name}")
+                val intent = Intent(this, MarkerEditActivity::class.java).apply {
+                    putExtra("markerIndex", index)
+                    putExtra("markerData", markerData)
+                }
+                markerEditLauncher.launch(intent)
+            }
+
+            // Add the marker to the layout
+            frameLayout.addView(markerView, layoutParams)
+
+            // Display the marker's name above it
+            if (markerData.name.isNotEmpty()) {
+                val nameView = TextView(this).apply {
+                    text = markerData.name
+                    setBackgroundResource(android.R.color.transparent)
+                }
+                val nameLayoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+                nameLayoutParams.leftMargin = actualX.toInt() - 10 // Adjust for marker size
+                nameLayoutParams.topMargin = actualY.toInt() - 30 // Above the marker
+                frameLayout.addView(nameView, nameLayoutParams)
+            }
+        }
+    }
+
+
+
 
     private fun saveMarkersToCSV() {
         val file = File(getMapDirectory(), MARKERS_FILE_NAME)
         try {
             FileWriter(file).use { writer ->
-                markers.forEach { point ->
-                    writer.append("${point.x},${point.y}\n")
+                markers.forEach { marker ->
+                    writer.append("${marker.position.x},${marker.position.y},${marker.name},${marker.wifiData}\n")
+                    Log.d("MapBuilderActivity", "Saved marker: ${marker.name} at position ${marker.position}")
                 }
             }
             Log.d("MapBuilderActivity", "Markers saved successfully: ${file.absolutePath}")
@@ -143,6 +209,7 @@ class MapBuilderActivity : AppCompatActivity() {
         }
     }
 
+
     private fun loadMarkersFromCSV() {
         val file = File(getMapDirectory(), MARKERS_FILE_NAME)
         if (file.exists()) {
@@ -151,20 +218,16 @@ class MapBuilderActivity : AppCompatActivity() {
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
                         val parts = line!!.split(",")
-                        if (parts.size == 2) {
-                            val x = parts[0].toFloat()
-                            val y = parts[1].toFloat()
-                            markers.add(PointF(x, y))
-                            // Calculate actual positions and add markers
-                            imageView.post {
-                                val actualX = x * imageView.width
-                                val actualY = y * imageView.height
-                                addMarker(actualX, actualY)
-                            }
+                        if (parts.size >= 4) {
+                            val position = PointF(parts[0].toFloat(), parts[1].toFloat())
+                            val name = parts[2]
+                            val wifiData = parts[3]
+                            markers.add(MarkerData(position, name, wifiData))
                         }
                     }
                 }
                 Log.d("MapBuilderActivity", "Markers loaded successfully: ${file.absolutePath}")
+                updateMarkersOnMap()
             } catch (e: IOException) {
                 e.printStackTrace()
                 Log.e("MapBuilderActivity", "Error loading markers: ${e.message}")
@@ -214,6 +277,9 @@ class MapBuilderActivity : AppCompatActivity() {
             Log.e("MapBuilderActivity", "Image file does not exist: ${file.absolutePath}")
         }
     }
+
+
+
 
     private fun saveTitle() {
         val title = etTitle.text.toString()
