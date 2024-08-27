@@ -20,6 +20,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.yalantis.ucrop.UCrop
 import java.io.*
+import java.util.Objects
+
 
 class MapBuilderActivity : AppCompatActivity() {
 
@@ -58,8 +60,8 @@ class MapBuilderActivity : AppCompatActivity() {
         imageView.setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
                 Log.d("MapBuilderActivity", "Touch detected at: (${event.x}, ${event.y})")
-                addMarker(event.x, event.y)
-                saveMarkersToCSV()
+                addMarker(event.x, event.y, "", "")
+                //saveMarkersToCSV()
             }
             true
         }
@@ -131,10 +133,10 @@ class MapBuilderActivity : AppCompatActivity() {
         }
     }
 
-    private fun addMarker(x: Float, y: Float) {
+    private fun addMarker(x: Float, y: Float, name: String, wifiData: String) {
         val position = PointF(x / imageView.width, y / imageView.height)
         Log.d("MapBuilderActivity", "Adding marker at: $position")
-        val markerData = MarkerData(position)
+        val markerData = MarkerData(position, name, wifiData)
         markers.add(markerData)
         saveMarkersToCSV()
         updateMarkersOnMap()
@@ -142,7 +144,7 @@ class MapBuilderActivity : AppCompatActivity() {
 
 
     private fun updateMarkersOnMap() {
-        frameLayout.removeAllViews() // Clear all previous markers and names
+        //frameLayout.remove // Clear all previous markers and names
 
         markers.forEachIndexed { index, markerData ->
             // Inflate marker view
@@ -158,7 +160,7 @@ class MapBuilderActivity : AppCompatActivity() {
 
             layoutParams.leftMargin = actualX.toInt() - 10 // Adjust for marker size
             layoutParams.topMargin = actualY.toInt() - 10 // Adjust for marker size
-            Log.d("MapBuilderActivity", "Displaying marker at: (${layoutParams.leftMargin}, ${layoutParams.topMargin})")
+            Log.d("MapBui/lderActivity", "Displaying marker at: (${layoutParams.leftMargin}, ${layoutParams.topMargin})")
 
             // Set up the click listener to edit the marker
             markerView.setOnClickListener {
@@ -195,10 +197,12 @@ class MapBuilderActivity : AppCompatActivity() {
 
     private fun saveMarkersToCSV() {
         val file = File(getMapDirectory(), MARKERS_FILE_NAME)
+
         try {
-            FileWriter(file).use { writer ->
+            FileWriter(file, false).use { writer ->
                 markers.forEach { marker ->
-                    writer.append("${marker.position.x},${marker.position.y},${marker.name},${marker.wifiData}\n")
+                    val  str: String  = "${marker.position.x},${marker.position.y},${marker.name},${marker.wifiData}\n"
+                    writer.write(str)
                     Log.d("MapBuilderActivity", "Saved marker: ${marker.name} at position ${marker.position}")
                 }
             }
@@ -219,10 +223,19 @@ class MapBuilderActivity : AppCompatActivity() {
                     while (reader.readLine().also { line = it } != null) {
                         val parts = line!!.split(",")
                         if (parts.size >= 4) {
-                            val position = PointF(parts[0].toFloat(), parts[1].toFloat())
+                            val x = parts[0].toFloat()
+                            val y = parts[1].toFloat()
+                            //val position = PointF(parts[0].toFloat(), parts[1].toFloat())
                             val name = parts[2]
                             val wifiData = parts[3]
-                            markers.add(MarkerData(position, name, wifiData))
+
+                          //  markers.add(MarkerData(PointF(x,y), name, wifiData))
+
+                            imageView.post {
+                                val actualX = x * imageView.width
+                                val actualY = y * imageView.height
+                                addMarker(actualX, actualY, name, wifiData)
+                            }
                         }
                     }
                 }
