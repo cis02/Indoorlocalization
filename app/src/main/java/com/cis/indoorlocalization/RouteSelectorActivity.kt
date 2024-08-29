@@ -20,6 +20,7 @@ import androidx.appcompat.app.AlertDialog
 import java.io.File
 import java.io.FileReader
 import java.io.IOException
+import kotlin.math.pow
 
 class RouteSelectorActivity : AppCompatActivity() {
 
@@ -40,18 +41,89 @@ class RouteSelectorActivity : AppCompatActivity() {
             handler.postDelayed(this, 5000) // Check every 5 seconds
         }
     }
+    private fun calculateDistance(p1: PointF, p2: PointF): Float {
+        return kotlin.math.sqrt((p1.x - p2.x).pow(2) + (p1.y - p2.y).pow(2))
+    }
+
+    private var edges: MutableMap<Pair<String, String>, Float> = mutableMapOf()
+
+    private fun setupGraph() {
+        edges.clear()  // Clear previous edges
+        markers.forEach { start ->
+            markers.forEach { end ->
+                if (start != end) {  // Ensure no node connects to itself
+                    val distance = calculateDistance(start.position, end.position)
+                    edges[Pair(start.name, end.name)] = distance
+                }
+            }
+        }
+    }
+
+
+    private fun dijkstra(startName: String, endName: String): List<String> {
+        val shortestPaths = mutableMapOf<String, Float>().withDefault { Float.MAX_VALUE }
+        val previousNodes = mutableMapOf<String, String?>()
+        val unvisited = markers.map { it.name }.toMutableSet()
+
+        shortestPaths[startName] = 0f
+
+        while (unvisited.isNotEmpty()) {
+            val current = unvisited.minByOrNull { shortestPaths.getValue(it) } ?: break
+            unvisited.remove(current)
+
+            markers.forEach { neighbor ->
+                if (neighbor.name != current) {
+                    val edgeKey = Pair(current, neighbor.name)
+                    val distance = edges[edgeKey]!!
+                    val newDistance = shortestPaths.getValue(current) + distance
+                    if (newDistance < shortestPaths.getValue(neighbor.name)) {
+                        shortestPaths[neighbor.name] = newDistance
+                        previousNodes[neighbor.name] = current
+                    }
+                }
+            }
+        }
+
+        return generatePath(previousNodes, startName, endName)
+    }
+
+
+    private fun generatePath(previousNodes: Map<String, String?>, startName: String, endName: String): List<String> {
+        var currentName = endName
+        val path = mutableListOf<String>()
+        while (currentName != startName) {
+            path.add(currentName)
+            currentName = previousNodes[currentName] ?: break
+        }
+        path.add(startName)
+        path.reverse()
+        return path
+    }
+
+    private fun displayPath(path: List<String>) {
+        val pathTextView = findViewById<TextView>(R.id.pathTextView)
+        pathTextView.text = "Follow this path: " + path.joinToString(" -> ")
+    }
+
 
     private fun checkCurrentLocation() {
         wifiUtils.startWifiScan()
-        val currentWifiResults = wifiUtils.getAllWifiNetworks()
+        val currentWifiResults = wifiUtils.getStrongestWifiNetworks(3)
+
+        Log.d("RouteSelectorActivity", "Checking current location with ${currentWifiResults.size} networks")
 
         currentWifiResults.forEach { scanResult ->
-            if (isMatchingWifiData(scanResult, destinationMarker?.wifiData ?: "")) {
+            Log.d("RouteSelectorActivity", "Checking network SSID=${scanResult.SSID}, BSSID=${scanResult.BSSID}, RSSI=${scanResult.level}")
+            if (destinationMarker != null && isMatchingWifiData(scanResult, destinationMarker!!.wifiData)) {
+                Log.d("RouteSelectorActivity", "Match found with destination marker!")
                 onArrivalAtDestination()
                 return
             }
         }
+
+        Log.d("RouteSelectorActivity", "No matching Wi-Fi network found for destination marker")
     }
+
 
     private fun onArrivalAtDestination() {
         showArrivalDialog(destinationMarker?.name ?: "your destination")
@@ -181,6 +253,11 @@ class RouteSelectorActivity : AppCompatActivity() {
         } else {
             Log.e("RouteSelectorActivity", "Markers file does not exist: ${file.absolutePath}")
         }
+        if (markers.isNotEmpty()) {
+            setupGraph()  // Only setup graph if markers are loaded
+        } else {
+            Log.e("RouteSelectorActivity", "No markers loaded.")
+        }
     }
 
     private fun updateMarkersOnMap() {
@@ -211,6 +288,8 @@ class RouteSelectorActivity : AppCompatActivity() {
                 }
 
                 destinationMarker = marker
+                val path = dijkstra(currentLocationMarker!!.name, destinationMarker!!.name)
+                displayPath(path)
                 val destinationView = View.inflate(this, R.layout.marker_dest, null)
                 frameLayout.addView(destinationView, layoutParams)
                 Log.d("RouteSelectorActivity", "Destination marker set: ${marker.name}")
@@ -308,42 +387,35 @@ class RouteSelectorActivity : AppCompatActivity() {
 
     private fun isMatchingWifiData(scanResult: ScanResult, markerWifiData: String): Boolean {
         val parsedData = parseMarkerWifiData(markerWifiData)
-        val markerSSID = parsedData["SSID"]
-        val markerBSSID = parsedData["BSSID"]
-        val markerRssi = parsedData["RSSI"]?.toIntOrNull()
 
-        val currentSSID = scanResult.SSID.trim('\"') // Remove quotes if present
+        val matches = scanResult.SSID.trim('"') == parsedData["SSID"] &&
+                scanResult.BSSID == parsedData["BSSID"] &&
+                kotlin.math.abs(scanResult.level - (parsedData["RSSI"]?.toInt() ?: 0)) <= 10  // Increased RSSI tolerance
 
-        // Relaxing RSSI matching threshold to 30%
-        return currentSSID == markerSSID &&
-                markerBSSID == scanResult.BSSID &&
-                markerRssi != null &&
-                kotlin.math.abs(scanResult.level - markerRssi) <= kotlin.math.abs(markerRssi * 0.3)
+        if (!matches) {
+            Log.d("RouteSelectorActivity", "Failed match: SSID=${parsedData["SSID"]} vs ${scanResult.SSID}, " +
+                    "BSSID=${parsedData["BSSID"]} vs ${scanResult.BSSID}, " +
+                    "RSSI Diff=${kotlin.math.abs(scanResult.level - (parsedData["RSSI"]?.toInt() ?: 0))}")
+        }
+
+        return matches
     }
-
 
 
     private fun parseMarkerWifiData(wifiData: String): Map<String, String> {
         val result = mutableMapOf<String, String>()
 
-        // Assuming the wifiData is in the format "SSID: <SSID> Signal Strength: <RSSI> dBm MAC Address: <BSSID>"
-        Log.d("RouteSelectorActivity", "Parsing Wi-Fi data: $wifiData")
+        // Extract SSID, RSSI, and BSSID using regex patterns
+        val ssidRegex = "SSID: (.*?) Signal Strength".toRegex()
+        val rssiRegex = "Signal Strength: (.*?) dBm".toRegex()
+        val bssidRegex = "MAC Address: (.*)".toRegex()
 
-        val ssidRegex = "SSID: ([^\\s]+)".toRegex()
-        val rssiRegex = "Signal Strength: (-?\\d+) dBm".toRegex()
-        val bssidRegex = "MAC Address: ([^\\s]+)".toRegex()
-
-        ssidRegex.find(wifiData)?.let { result["SSID"] = it.groupValues[1] }
-        rssiRegex.find(wifiData)?.let { result["RSSI"] = it.groupValues[1] }
-        bssidRegex.find(wifiData)?.let { result["BSSID"] = it.groupValues[1] }
-
-        Log.d("RouteSelectorActivity", "Parsed Wi-Fi data: SSID=${result["SSID"]}, RSSI=${result["RSSI"]}, BSSID=${result["BSSID"]}")
+        ssidRegex.find(wifiData)?.let { result["SSID"] = it.groupValues[1].trim() }
+        rssiRegex.find(wifiData)?.let { result["RSSI"] = it.groupValues[1].trim() }
+        bssidRegex.find(wifiData)?.let { result["BSSID"] = it.groupValues[1].trim() }
 
         return result
     }
-
-
-
 
     private fun highlightCurrentLocation(marker: MarkerData) {
         currentLocationMarker = marker  // Set the current location marker

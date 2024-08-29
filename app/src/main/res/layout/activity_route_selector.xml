@@ -56,4 +56,14 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginTop="8dp" />
+    <TextView
+        android:id="@+id/pathTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@id/btnLocate"
+        android:layout_alignParentBottom="true"
+        android:padding="16dp"
+        android:text="Path instructions will appear here"
+        android:background="@color/white"
+        android:textColor="@color/black"/>
 </androidx.constraintlayout.widget.ConstraintLayout>
