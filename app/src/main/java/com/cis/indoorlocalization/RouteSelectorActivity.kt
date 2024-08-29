@@ -4,15 +4,19 @@ import android.graphics.PointF
 import android.graphics.BitmapFactory
 import android.net.wifi.ScanResult
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewTreeObserver
+import android.view.LayoutInflater
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import java.io.File
 import java.io.FileReader
 import java.io.IOException
@@ -27,6 +31,65 @@ class RouteSelectorActivity : AppCompatActivity() {
     private var currentLocationMarker: MarkerData? = null
     private var destinationMarker: MarkerData? = null
 
+    private val handler = Handler(Looper.getMainLooper())
+    private val checkLocationRunnable = object : Runnable {
+        override fun run() {
+            if (destinationMarker != null) {
+                checkCurrentLocation()
+            }
+            handler.postDelayed(this, 5000) // Check every 5 seconds
+        }
+    }
+
+    private fun checkCurrentLocation() {
+        wifiUtils.startWifiScan()
+        val currentWifiResults = wifiUtils.getAllWifiNetworks()
+
+        currentWifiResults.forEach { scanResult ->
+            if (isMatchingWifiData(scanResult, destinationMarker?.wifiData ?: "")) {
+                onArrivalAtDestination()
+                return
+            }
+        }
+    }
+
+    private fun onArrivalAtDestination() {
+        showArrivalDialog(destinationMarker?.name ?: "your destination")
+        resetMap()
+    }
+    private fun showArrivalDialog(destinationName: String) {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_arrival, null)
+        val tvMessage = dialogView.findViewById<TextView>(R.id.tvArrivalMessage)
+        tvMessage.text = "You have arrived at $destinationName!"
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setCancelable(false)  // Optional: makes it so the dialog can't be dismissed by pressing outside it
+            .create()
+
+        dialogView.findViewById<Button>(R.id.btnClose).setOnClickListener {
+            dialog.dismiss()
+            resetMap()  // Reset the map once the dialog is closed
+        }
+
+        dialog.show()
+    }
+
+
+    private fun resetMap() {
+        currentLocationMarker = null
+        destinationMarker = null
+        updateMarkersOnMap()  // Refresh the map to only show normal markers
+        stopLocationChecks()  // Stop checking location
+    }
+
+    private fun startLocationChecks() {
+        handler.post(checkLocationRunnable)
+    }
+
+    private fun stopLocationChecks() {
+        handler.removeCallbacks(checkLocationRunnable)
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_route_selector)
@@ -142,6 +205,7 @@ class RouteSelectorActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
 
+                // Proceed if currentLocationMarker is not null
                 if (destinationMarker != null) {
                     updateMarkersOnMap()
                 }
@@ -150,10 +214,13 @@ class RouteSelectorActivity : AppCompatActivity() {
                 val destinationView = View.inflate(this, R.layout.marker_dest, null)
                 frameLayout.addView(destinationView, layoutParams)
                 Log.d("RouteSelectorActivity", "Destination marker set: ${marker.name}")
+                startLocationChecks()
             }
+
 
             frameLayout.addView(markerView, layoutParams)
 
+            // Optionally, add name views as before
             if (marker.name.isNotEmpty()) {
                 val nameView = TextView(this).apply {
                     text = marker.name
@@ -167,6 +234,40 @@ class RouteSelectorActivity : AppCompatActivity() {
                 nameLayoutParams.topMargin = actualY.toInt() - 30
                 frameLayout.addView(nameView, nameLayoutParams)
             }
+        }
+
+        // Highlight the current location
+        currentLocationMarker?.let {
+            val currentLocationView = View.inflate(this, R.layout.marker_loc, null)
+            val layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+
+            val actualX = it.position.x * imageView.width
+            val actualY = it.position.y * imageView.height
+
+            layoutParams.leftMargin = actualX.toInt() - 10
+            layoutParams.topMargin = actualY.toInt() - 10
+
+            frameLayout.addView(currentLocationView, layoutParams)
+        }
+
+        // Highlight the destination marker
+        destinationMarker?.let {
+            val destinationView = View.inflate(this, R.layout.marker_dest, null)
+            val layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+
+            val actualX = it.position.x * imageView.width
+            val actualY = it.position.y * imageView.height
+
+            layoutParams.leftMargin = actualX.toInt() - 10
+            layoutParams.topMargin = actualY.toInt() - 10
+
+            frameLayout.addView(destinationView, layoutParams)
         }
     }
 
@@ -245,7 +346,9 @@ class RouteSelectorActivity : AppCompatActivity() {
 
 
     private fun highlightCurrentLocation(marker: MarkerData) {
-        updateMarkersOnMap()
+        currentLocationMarker = marker  // Set the current location marker
+
+        updateMarkersOnMap()  // You might want to call this before setting the marker to ensure it doesn't reset.
 
         val currentLocationView = View.inflate(this, R.layout.marker_loc, null)
         val layoutParams = FrameLayout.LayoutParams(

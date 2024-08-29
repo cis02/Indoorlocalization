@@ -48,6 +48,14 @@ class WifiUtils(private val context: Context) {
         return filteredNetworks.maxByOrNull { smoothRssi(it.BSSID, it.level) }
     }
 
+    // Fetches and returns the three strongest available Wi-Fi networks
+    fun getStrongestWifiNetworks(count: Int = 3): List<ScanResult> {
+        return wifiManager.scanResults
+            .sortedByDescending { it.level }
+            .take(count)
+    }
+
+
     // Get the Wi-Fi network with a specific SSID, with optional filtering
     fun getWifiNetworkBySSID(ssid: String, minRssi: Int = -80): ScanResult? {
         return filterWifiNetworks(minRssi, ssid).find { it.SSID == ssid }
