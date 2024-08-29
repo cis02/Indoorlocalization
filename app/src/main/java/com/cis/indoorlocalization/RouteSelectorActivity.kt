@@ -1,35 +1,31 @@
 package com.cis.indoorlocalization
 
-import android.graphics.*
+import android.graphics.PointF
+import android.graphics.BitmapFactory
+import android.net.wifi.ScanResult
 import android.os.Bundle
 import android.util.Log
-import android.view.MotionEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import java.io.*
-import kotlin.math.pow
-import kotlin.math.sqrt
+import java.io.File
+import java.io.FileReader
+import java.io.IOException
 
 class RouteSelectorActivity : AppCompatActivity() {
 
     private lateinit var imageView: ImageView
     private lateinit var frameLayout: FrameLayout
-    private lateinit var tvTitle: TextView
-    private val markers = mutableListOf<PointF>()
-    private var currentLocationMarker: PointF? = null
-    private var destinationMarkerView: View? = null
-    private var pathOverlay: PathOverlayView? = null
-
-    companion object {
-        private const val MARKERS_FILE_NAME = "markers.csv"
-        private const val IMAGE_FILE_NAME = "croppedImage.jpg"
-        private const val TITLE_FILE_NAME = "title.txt"
-        private const val MAP_DIRECTORY = "currentMap"
-    }
+    private lateinit var tvMapTitle: TextView
+    private val markers = mutableListOf<MarkerData>()
+    private lateinit var wifiUtils: WifiUtils
+    private var currentLocationMarker: MarkerData? = null
+    private var destinationMarker: MarkerData? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,79 +33,49 @@ class RouteSelectorActivity : AppCompatActivity() {
 
         imageView = findViewById(R.id.imageView)
         frameLayout = findViewById(R.id.frameLayout)
-        tvTitle = findViewById(R.id.tvTitle)
+        tvMapTitle = findViewById(R.id.tvMapTitle)
+        wifiUtils = WifiUtils(this)
 
         findViewById<Button>(R.id.btnBack).setOnClickListener {
             finish() // Go back to the previous activity
+        }
+
+        findViewById<Button>(R.id.btnLocate).setOnClickListener {
+            locateCurrentPosition()
         }
 
         loadTitle()
         loadImage()
         loadMarkersFromCSV()
 
-        imageView.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_DOWN) {
-                val destinationMarker = findNearestMarker(event.x, event.y)
-                if (destinationMarker != null) {
-                    setDestinationMarker(destinationMarker)
-                    if (currentLocationMarker != null) {
-                        showNavigation(currentLocationMarker!!, destinationMarker)
-                    }
-                }
+        imageView.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                imageView.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                updateMarkersOnMap()
             }
-            true
-        }
+        })
     }
 
-    private fun getMapDirectory(): File {
-        return File(filesDir, MAP_DIRECTORY).apply {
-            if (!exists()) mkdirs()
-        }
-    }
-
-    private fun loadMarkersFromCSV() {
-        val file = File(getMapDirectory(), MARKERS_FILE_NAME)
+    private fun loadTitle() {
+        val file = File(getMapDirectory(), MapBuilderActivity.TITLE_FILE_NAME)
         if (file.exists()) {
             try {
-                BufferedReader(FileReader(file)).use { reader ->
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        val parts = line!!.split(",")
-                        if (parts.size == 2) {
-                            val x = parts[0].toFloat()
-                            val y = parts[1].toFloat()
-                            markers.add(PointF(x, y))
-                            // Calculate actual positions and add markers
-                            imageView.post {
-                                val actualX = x * imageView.width
-                                val actualY = y * imageView.height
-                                addMarker(actualX.toInt(), actualY.toInt())
-                            }
-                        }
-                    }
+                FileReader(file).use { reader ->
+                    val title = reader.readText()
+                    tvMapTitle.text = title
                 }
-                Log.d("RouteSelectorActivity", "Markers loaded successfully: ${file.absolutePath}")
-                // Set a random marker as the current location marker for demonstration
-                if (markers.isNotEmpty()) {
-                    val randomMarker = markers.random()
-                    currentLocationMarker = randomMarker
-                    imageView.post {
-                        val actualX = randomMarker.x * imageView.width
-                        val actualY = randomMarker.y * imageView.height
-                        addCurrentLocationMarker(actualX.toInt(), actualY.toInt())
-                    }
-                }
+                Log.d("RouteSelectorActivity", "Title loaded successfully: ${file.absolutePath}")
             } catch (e: IOException) {
                 e.printStackTrace()
-                Log.e("RouteSelectorActivity", "Error loading markers: ${e.message}")
+                Log.e("RouteSelectorActivity", "Error loading title: ${e.message}")
             }
         } else {
-            Log.e("RouteSelectorActivity", "Markers file does not exist: ${file.absolutePath}")
+            Log.e("RouteSelectorActivity", "Title file does not exist: ${file.absolutePath}")
         }
     }
 
     private fun loadImage() {
-        val file = File(getMapDirectory(), IMAGE_FILE_NAME)
+        val file = File(getMapDirectory(), MapBuilderActivity.IMAGE_FILE_NAME)
         if (file.exists()) {
             try {
                 val bitmap = BitmapFactory.decodeFile(file.absolutePath)
@@ -128,163 +94,177 @@ class RouteSelectorActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadTitle() {
-        val file = File(getMapDirectory(), TITLE_FILE_NAME)
+    private fun loadMarkersFromCSV() {
+        val file = File(getMapDirectory(), MapBuilderActivity.MARKERS_FILE_NAME)
         if (file.exists()) {
             try {
-                BufferedReader(FileReader(file)).use { reader ->
-                    val title = reader.readLine()
-                    tvTitle.text = title
+                FileReader(file).use { reader ->
+                    reader.readLines().forEach { line ->
+                        val parts = line.split(",")
+                        if (parts.size >= 4) {
+                            val x = parts[0].toFloat()
+                            val y = parts[1].toFloat()
+                            val name = parts[2]
+                            val wifiData = parts[3]
+                            markers.add(MarkerData(PointF(x, y), name, wifiData))
+                        }
+                    }
                 }
-                Log.d("RouteSelectorActivity", "Title loaded successfully: ${file.absolutePath}")
+                Log.d("RouteSelectorActivity", "Markers loaded successfully: ${file.absolutePath}")
             } catch (e: IOException) {
                 e.printStackTrace()
-                Log.e("RouteSelectorActivity", "Error loading title: ${e.message}")
+                Log.e("RouteSelectorActivity", "Error loading markers: ${e.message}")
             }
         } else {
-            Log.e("RouteSelectorActivity", "Title file does not exist: ${file.absolutePath}")
+            Log.e("RouteSelectorActivity", "Markers file does not exist: ${file.absolutePath}")
         }
     }
 
-    private fun addMarker(x: Int, y: Int) {
-        val markerView = View.inflate(this, R.layout.marker_view, null)
-        val layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT
-        )
-        layoutParams.leftMargin = x - 10 // Adjust for marker size
-        layoutParams.topMargin = y - 10 // Adjust for marker size
-        frameLayout.addView(markerView, layoutParams)
+    private fun updateMarkersOnMap() {
+        //frameLayout.removeAllViews()
+
+        markers.forEach { marker ->
+            val markerView = View.inflate(this, R.layout.marker_view, null)
+            val layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+
+            val actualX = marker.position.x * imageView.width
+            val actualY = marker.position.y * imageView.height
+
+            layoutParams.leftMargin = actualX.toInt() - 10
+            layoutParams.topMargin = actualY.toInt() - 10
+
+            markerView.setOnClickListener {
+                if (currentLocationMarker == null) {
+                    Toast.makeText(this, "Locate your position first", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                if (destinationMarker != null) {
+                    updateMarkersOnMap()
+                }
+
+                destinationMarker = marker
+                val destinationView = View.inflate(this, R.layout.marker_dest, null)
+                frameLayout.addView(destinationView, layoutParams)
+                Log.d("RouteSelectorActivity", "Destination marker set: ${marker.name}")
+            }
+
+            frameLayout.addView(markerView, layoutParams)
+
+            if (marker.name.isNotEmpty()) {
+                val nameView = TextView(this).apply {
+                    text = marker.name
+                    setBackgroundResource(android.R.color.transparent)
+                }
+                val nameLayoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+                nameLayoutParams.leftMargin = actualX.toInt() - 10
+                nameLayoutParams.topMargin = actualY.toInt() - 30
+                frameLayout.addView(nameView, nameLayoutParams)
+            }
+        }
     }
 
-    private fun addCurrentLocationMarker(x: Int, y: Int) {
-        val markerView = View.inflate(this, R.layout.marker_loc, null)
-        val layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT
-        )
-        layoutParams.leftMargin = x - 10 // Adjust for marker size
-        layoutParams.topMargin = y - 10 // Adjust for marker size
-        frameLayout.addView(markerView, layoutParams)
-    }
+    private fun locateCurrentPosition() {
+        wifiUtils.startWifiScan()
+        val currentWifiResults = wifiUtils.getAllWifiNetworks()
 
-    private fun setDestinationMarker(point: PointF) {
-        destinationMarkerView?.let { frameLayout.removeView(it) }
-        val markerView = View.inflate(this, R.layout.marker_dest, null)
-        val layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT
-        )
-        layoutParams.leftMargin = (point.x * imageView.width).toInt() - 10 // Adjust for marker size
-        layoutParams.topMargin = (point.y * imageView.height).toInt() - 10 // Adjust for marker size
-        frameLayout.addView(markerView, layoutParams)
-        destinationMarkerView = markerView
-    }
+        Log.d("RouteSelectorActivity", "Current Wi-Fi Results: ${currentWifiResults.size} networks found.")
 
-    private fun findNearestMarker(x: Float, y: Float): PointF? {
-        val touchPoint = PointF(x / imageView.width, y / imageView.height)
-        val threshold = 0.05f // 5% of the image size
-        return markers.minByOrNull { calculateDistance(it, touchPoint) }?.takeIf { calculateDistance(it, touchPoint) < threshold }
-    }
+        currentWifiResults.forEach { scanResult ->
+            Log.d("RouteSelectorActivity", "Found Wi-Fi: SSID=${scanResult.SSID}, BSSID=${scanResult.BSSID}, RSSI=${scanResult.level} dBm")
+        }
 
-    private fun showNavigation(start: PointF, end: PointF) {
-        val graph = Graph()
+        // Iterate over all markers
+        for (marker in markers) {
+            if (marker.wifiData.isBlank()) {
+                Log.w("RouteSelectorActivity", "Skipping marker with missing or malformed Wi-Fi data: ${marker.name}")
+                continue
+            }
 
-        // Create a map to assign a unique integer identifier to each marker
-        val markerIndexMap = markers.mapIndexed { index, marker -> marker to index }.toMap()
-
-        // Add vertices and edges based on your markers and possible paths
-        markers.forEachIndexed { index, marker ->
-            val adjacentVertices = markers.mapIndexedNotNull { neighborIndex, neighbor ->
-                if (neighborIndex != index) {
-                    Vertex(neighborIndex.toString()[0], calculateDistance(marker, neighbor).toInt())
-                } else {
-                    null
+            // Check each scan result to see if it matches this marker
+            for (scanResult in currentWifiResults) {
+                if (isMatchingWifiData(scanResult, marker.wifiData)) {
+                    Log.d("RouteSelectorActivity", "Matched marker: ${marker.name}")
+                    highlightCurrentLocation(marker)
+                    return // Exit the function immediately after finding the match
                 }
             }
-            graph.addVertex(index.toString()[0], adjacentVertices)
         }
 
-        // Find the closest markers to the start and end points
-        val startVertexIndex = markerIndexMap.entries.minByOrNull { calculateDistance(it.key, start) }?.value
-        val endVertexIndex = markerIndexMap.entries.minByOrNull { calculateDistance(it.key, end) }?.value
-
-        if (startVertexIndex == null || endVertexIndex == null) {
-            Log.e("RouteSelectorActivity", "Could not find appropriate vertices for start or end points")
-            return
-        }
-
-        val startVertex = startVertexIndex.toString()[0]
-        val endVertex = endVertexIndex.toString()[0]
-
-        // Log the start and end vertices
-        Log.d("RouteSelectorActivity", "Start Vertex: $startVertex, End Vertex: $endVertex")
-
-        val path = graph.getShortestPath(startVertex, endVertex)
-
-        // Log the path for debugging
-        Log.d("RouteSelectorActivity", "Calculated path: $path")
-
-        // Translate the path characters back to the corresponding marker positions
-        val pathPoints = path.map { markerId ->
-            markers[markerId.toString().toInt()]
-        }
-
-        // Visualize the path on your map
-        visualizePath(pathPoints)
+        // If no match was found
+        Log.e("RouteSelectorActivity", "No matching marker found for the current Wi-Fi network")
+        Toast.makeText(this, "Current location not found on map", Toast.LENGTH_SHORT).show()
     }
 
 
 
 
+    private fun isMatchingWifiData(scanResult: ScanResult, markerWifiData: String): Boolean {
+        val parsedData = parseMarkerWifiData(markerWifiData)
+        val markerSSID = parsedData["SSID"]
+        val markerBSSID = parsedData["BSSID"]
+        val markerRssi = parsedData["RSSI"]?.toIntOrNull()
 
+        val currentSSID = scanResult.SSID.trim('\"') // Remove quotes if present
 
-    private fun calculateDistance(point1: PointF, point2: PointF): Float {
-        return sqrt((point2.x - point1.x).pow(2) + (point2.y - point1.y).pow(2))
+        // Relaxing RSSI matching threshold to 30%
+        return currentSSID == markerSSID &&
+                markerBSSID == scanResult.BSSID &&
+                markerRssi != null &&
+                kotlin.math.abs(scanResult.level - markerRssi) <= kotlin.math.abs(markerRssi * 0.3)
     }
 
-    private fun visualizePath(pathPoints: List<PointF>) {
-        pathOverlay?.let { frameLayout.removeView(it) }
-        pathOverlay = PathOverlayView(this).apply {
-            setPathPoints(pathPoints)
-        }
-        frameLayout.addView(pathOverlay)
-    }
 
-    inner class PathOverlayView(context: android.content.Context) : View(context) {
 
-        private val pathPaint = Paint().apply {
-            color = Color.RED
-            strokeWidth = 5f
-            style = Paint.Style.STROKE
-        }
-        private var pathPoints: List<PointF> = emptyList()
+    private fun parseMarkerWifiData(wifiData: String): Map<String, String> {
+        val result = mutableMapOf<String, String>()
 
-        fun setPathPoints(points: List<PointF>) {
-            this.pathPoints = points
-            invalidate() // Request to redraw the view with the new path
-        }
+        // Assuming the wifiData is in the format "SSID: <SSID> Signal Strength: <RSSI> dBm MAC Address: <BSSID>"
+        Log.d("RouteSelectorActivity", "Parsing Wi-Fi data: $wifiData")
 
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            if (pathPoints.size < 2) return
-            for (i in 0 until pathPoints.size - 1) {
-                val start = pathPoints[i]
-                val end = pathPoints[i + 1]
-                // Log the points being drawn for debugging
-                Log.d("PathOverlayView", "Drawing line from ($start.x, $start.y) to ($end.x, $end.y)")
-                canvas.drawLine(
-                    start.x * imageView.width,
-                    start.y * imageView.height,
-                    end.x * imageView.width,
-                    end.y * imageView.height,
-                    pathPaint
-                )
-            }
-        }
+        val ssidRegex = "SSID: ([^\\s]+)".toRegex()
+        val rssiRegex = "Signal Strength: (-?\\d+) dBm".toRegex()
+        val bssidRegex = "MAC Address: ([^\\s]+)".toRegex()
+
+        ssidRegex.find(wifiData)?.let { result["SSID"] = it.groupValues[1] }
+        rssiRegex.find(wifiData)?.let { result["RSSI"] = it.groupValues[1] }
+        bssidRegex.find(wifiData)?.let { result["BSSID"] = it.groupValues[1] }
+
+        Log.d("RouteSelectorActivity", "Parsed Wi-Fi data: SSID=${result["SSID"]}, RSSI=${result["RSSI"]}, BSSID=${result["BSSID"]}")
+
+        return result
     }
 
 
 
 
+    private fun highlightCurrentLocation(marker: MarkerData) {
+        updateMarkersOnMap()
+
+        val currentLocationView = View.inflate(this, R.layout.marker_loc, null)
+        val layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        )
+
+        val actualX = marker.position.x * imageView.width
+        val actualY = marker.position.y * imageView.height
+
+        layoutParams.leftMargin = actualX.toInt() - 10
+        layoutParams.topMargin = actualY.toInt() - 10
+
+        frameLayout.addView(currentLocationView, layoutParams)
+    }
+
+    private fun getMapDirectory(): File {
+        return File(filesDir, MapBuilderActivity.MAP_DIRECTORY).apply {
+            if (!exists()) mkdirs()
+        }
+    }
 }

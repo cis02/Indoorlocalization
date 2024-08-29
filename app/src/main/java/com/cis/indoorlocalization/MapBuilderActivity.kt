@@ -34,10 +34,10 @@ class MapBuilderActivity : AppCompatActivity() {
 
     companion object {
         private const val REQUEST_CROP_IMAGE = 1001
-        private const val MARKERS_FILE_NAME = "markers.csv"
-        private const val IMAGE_FILE_NAME = "croppedImage.jpg"
-        private const val TITLE_FILE_NAME = "title.txt"
-        private const val MAP_DIRECTORY = "currentMap"
+        const val MARKERS_FILE_NAME = "markers.csv"
+        const val IMAGE_FILE_NAME = "croppedImage.jpg"
+        const val TITLE_FILE_NAME = "title.txt"
+        const val MAP_DIRECTORY = "currentMap"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -34,4 +34,18 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginTop="16dp"/>
 
+    <TextView
+        android:id="@+id/wifiTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/wifiTextView"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="40dp"
+        android:text="SSID: "
+        app:layout_constraintTop_toBottomOf="@id/btnGatherWifi"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:textColor="@android:color/black"
+        android:textSize="20sp"/>
+
 </androidx.constraintlayout.widget.ConstraintLayout>

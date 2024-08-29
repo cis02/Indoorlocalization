@@ -31,7 +31,7 @@ class WifiUtils(private val context: Context) {
     }
 
     // Smooth RSSI values using a simple moving average
-    private fun smoothRssi(bssid: String, rssi: Int, windowSize: Int = 5): Int {
+    fun smoothRssi(bssid: String, rssi: Int, windowSize: Int = 5): Int {
         val rssiList = smoothingMap.getOrPut(bssid) { mutableListOf() }
 
         if (rssiList.size >= windowSize) {
@@ -57,6 +57,10 @@ class WifiUtils(private val context: Context) {
     fun getFormattedWifiInfo(scanResult: ScanResult): String {
         val smoothedRssi = smoothRssi(scanResult.BSSID, scanResult.level)
         return "SSID: ${scanResult.SSID}\nSignal Strength: $smoothedRssi dBm\nMAC Address: ${scanResult.BSSID}"
+    }
+    fun getClosestWifioneLine(scanResult: ScanResult): String {
+        val smoothedRssi = smoothRssi(scanResult.BSSID, scanResult.level)
+        return "SSID: ${scanResult.SSID} Signal Strength: $smoothedRssi dBm MAC Address: ${scanResult.BSSID}"
     }
 
     // Collect and return current Wi-Fi fingerprints (SSID, BSSID, smoothed signal strength)
